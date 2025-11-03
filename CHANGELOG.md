@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2025-11-03
+
+### Fixed
+- **Active-only filter**: Fixed broken UI selectors for "Active trends only" toggle. Now uses correct CSS selectors (`button[aria-label*='select trend status']` and `button[role='switch']`).
+- **Menu closing**: Fixed element click intercepted error by using ESC key to properly close filter menus before clicking Export button.
+
+### Changed
+- **Sort parameter**: Documented that sort parameter only affects UI display, not CSV export order. CSV always exports in relevance order regardless of sort selection.
+- **Improved selectors**: Switched from fragile XPath selectors to more reliable CSS selectors using aria-label attributes.
+
 ## [0.1.1] - 2025-11-03
 
 ### Fixed
@@ -33,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time monitoring capabilities
 - Best-in-class documentation
 
-[Unreleased]: https://github.com/flack0x/trendspyg/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/flack0x/trendspyg/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/flack0x/trendspyg/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/flack0x/trendspyg/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/flack0x/trendspyg/releases/tag/v0.1.0

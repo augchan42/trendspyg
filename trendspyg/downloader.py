@@ -19,6 +19,7 @@ import time
 import argparse
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
@@ -145,52 +146,31 @@ def download_google_trends_csv(geo='US', hours=24, category='all', active_only=F
         if active_only:
             try:
                 print("[INFO] Enabling 'Active trends only' filter...")
+                # Click the "All trends" button to open the menu
                 active_button = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'All trends')]"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label*='select trend status']"))
                 )
                 active_button.click()
                 time.sleep(0.5)
 
-                # Click the toggle switch
+                # Click the toggle switch (it's a button with role="switch")
                 toggle = WebDriverWait(driver, 3).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[role="switch"]'))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button[role='switch'][aria-label='Show active trends only']"))
                 )
                 driver.execute_script("arguments[0].click();", toggle)
                 time.sleep(1)
 
-                # Click somewhere else to close menu
-                driver.find_element(By.TAG_NAME, 'body').click()
-                time.sleep(0.5)
+                # Press ESC to close menu
+                driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                time.sleep(1)
             except Exception as e:
                 print(f"[WARN] Could not toggle active trends: {e}")
 
         # 2. Apply sort if not default (relevance)
+        # NOTE: Sort appears to only affect UI table display, not CSV export order
+        # CSV always exports in relevance order regardless of sort selection
         if sort_by.lower() != 'relevance':
-            try:
-                print(f"[INFO] Sorting by: {sort_by}...")
-
-                sort_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'relevance') or contains(., 'Relevance')]"))
-                )
-                driver.execute_script("arguments[0].scrollIntoView(true);", sort_button)
-                time.sleep(0.5)
-                driver.execute_script("arguments[0].click();", sort_button)
-                time.sleep(1)
-
-                # Click the sort option
-                if sort_by.lower() == 'title':
-                    sort_option = driver.find_element(By.XPATH, "//div[@role='menuitemradio'][contains(., 'Title')]")
-                elif sort_by.lower() == 'volume':
-                    sort_option = driver.find_element(By.XPATH, "//div[@role='menuitemradio'][contains(., 'Search volume')]")
-                elif sort_by.lower() == 'recency':
-                    sort_option = driver.find_element(By.XPATH, "//div[@role='menuitemradio'][contains(., 'Recency')]")
-                else:
-                    sort_option = driver.find_element(By.XPATH, "//div[@role='menuitemradio'][contains(., 'Relevance')]")
-
-                driver.execute_script("arguments[0].click();", sort_option)
-                time.sleep(1)
-            except Exception as e:
-                print(f"[WARN] Could not apply sort (will use default): {str(e)[:100]}")
+            print(f"[INFO] Note: Sort by '{sort_by}' only affects UI display (CSV exports in relevance order)")
 
         # Click Export button
         print("[INFO] Downloading CSV...")

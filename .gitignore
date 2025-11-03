@@ -225,3 +225,4 @@ simple_downloaders/
 monitors/
 utilities/
 batch_scripts/
+.playwright-mcp/
