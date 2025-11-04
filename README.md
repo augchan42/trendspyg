@@ -1,6 +1,8 @@
 # trendspyg
 
+[![PyPI version](https://img.shields.io/pypi/v/trendspyg.svg)](https://pypi.org/project/trendspyg/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/trendspyg.svg)](https://pypi.org/project/trendspyg/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Free, open-source Python library for real-time Google Trends data** - a modern alternative to the archived pytrends with **188,000+ configuration options**.
