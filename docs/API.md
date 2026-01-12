@@ -1,0 +1,519 @@
+# trendspyg API Reference
+
+Complete API documentation for trendspyg v0.4.0.
+
+---
+
+## Table of Contents
+
+- [RSS Functions](#rss-functions)
+  - [download_google_trends_rss](#download_google_trends_rss)
+  - [download_google_trends_rss_async](#download_google_trends_rss_async)
+  - [download_google_trends_rss_batch](#download_google_trends_rss_batch)
+  - [download_google_trends_rss_batch_async](#download_google_trends_rss_batch_async)
+- [CSV Functions](#csv-functions)
+  - [download_google_trends_csv](#download_google_trends_csv)
+- [Cache Functions](#cache-functions)
+  - [clear_rss_cache](#clear_rss_cache)
+  - [get_rss_cache_stats](#get_rss_cache_stats)
+  - [set_rss_cache_ttl](#set_rss_cache_ttl)
+- [Exceptions](#exceptions)
+- [Configuration](#configuration)
+- [Type Aliases](#type-aliases)
+
+---
+
+## RSS Functions
+
+### download_google_trends_rss
+
+Fast RSS feed download with rich media content.
+
+```python
+def download_google_trends_rss(
+    geo: str = 'US',
+    output_format: Literal['dict', 'dataframe', 'json', 'csv'] = 'dict',
+    include_images: bool = True,
+    include_articles: bool = True,
+    max_articles_per_trend: int = 5,
+    cache: bool = True
+) -> Union[List[Dict], str, pd.DataFrame]
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `geo` | `str` | `'US'` | Country code (e.g., 'US', 'GB') or US state (e.g., 'US-CA') |
+| `output_format` | `str` | `'dict'` | Output format: 'dict', 'dataframe', 'json', 'csv' |
+| `include_images` | `bool` | `True` | Include image URLs and sources |
+| `include_articles` | `bool` | `True` | Include news articles data |
+| `max_articles_per_trend` | `int` | `5` | Maximum news articles per trend |
+| `cache` | `bool` | `True` | Use cached results if available |
+
+**Returns:**
+
+- `List[Dict]` when `output_format='dict'`
+- `pd.DataFrame` when `output_format='dataframe'`
+- `str` (JSON) when `output_format='json'`
+- `str` (CSV) when `output_format='csv'`
+
+**Raises:**
+
+- `InvalidParameterError` - Invalid geo code or output format
+- `DownloadError` - Network or parsing error
+- `RateLimitError` - Rate limit exceeded (HTTP 429/403)
+
+**Example:**
+
+```python
+from trendspyg import download_google_trends_rss
+
+# Basic usage
+trends = download_google_trends_rss(geo='US')
+
+# Get as DataFrame
+df = download_google_trends_rss(geo='GB', output_format='dataframe')
+
+# Minimal data (faster)
+trends = download_google_trends_rss(
+    geo='US',
+    include_images=False,
+    include_articles=False
+)
+
+# Bypass cache for fresh data
+trends = download_google_trends_rss(geo='US', cache=False)
+```
+
+**Return Data Structure (dict format):**
+
+```python
+{
+    'trend': 'bitcoin',              # Trend keyword
+    'traffic': '500K+',              # Search volume tier
+    'published': datetime(...),       # Publication timestamp
+    'explore_link': 'https://...',   # Google Trends explore URL
+    'image': {                        # Only if include_images=True
+        'url': 'https://...',
+        'source': 'CNN'
+    },
+    'news_articles': [                # Only if include_articles=True
+        {
+            'headline': 'Bitcoin surges...',
+            'url': 'https://...',
+            'source': 'Reuters',
+            'image': 'https://...'
+        }
+    ]
+}
+```
+
+---
+
+### download_google_trends_rss_async
+
+Async version for parallel fetching. 50-100x faster for batch operations.
+
+```python
+async def download_google_trends_rss_async(
+    geo: str = 'US',
+    output_format: Literal['dict', 'dataframe', 'json', 'csv'] = 'dict',
+    include_images: bool = True,
+    include_articles: bool = True,
+    max_articles_per_trend: int = 5,
+    session: Optional[aiohttp.ClientSession] = None,
+    cache: bool = True
+) -> Union[List[Dict], str, pd.DataFrame]
+```
+
+**Additional Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `session` | `aiohttp.ClientSession` | `None` | Shared session for connection pooling |
+
+**Requires:** `pip install trendspyg[async]`
+
+**Example:**
+
+```python
+import asyncio
+from trendspyg import download_google_trends_rss_async
+
+# Single country
+async def main():
+    trends = await download_google_trends_rss_async(geo='US')
+    print(f"Got {len(trends)} trends")
+
+asyncio.run(main())
+
+# Multiple countries in parallel
+async def fetch_all():
+    countries = ['US', 'GB', 'CA', 'AU', 'DE']
+    tasks = [download_google_trends_rss_async(geo=c) for c in countries]
+    results = await asyncio.gather(*tasks)
+    return dict(zip(countries, results))
+
+all_trends = asyncio.run(fetch_all())
+```
+
+---
+
+### download_google_trends_rss_batch
+
+Synchronous batch fetching with progress bar.
+
+```python
+def download_google_trends_rss_batch(
+    geos: List[str],
+    include_images: bool = True,
+    include_articles: bool = True,
+    max_articles_per_trend: int = 5,
+    show_progress: bool = True,
+    delay: float = 0.0
+) -> Dict[str, List[Dict]]
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `geos` | `List[str]` | required | List of geo codes to fetch |
+| `show_progress` | `bool` | `True` | Show tqdm progress bar |
+| `delay` | `float` | `0.0` | Delay between requests (seconds) |
+
+**Returns:** `Dict[str, List[Dict]]` - Dictionary mapping geo codes to trends
+
+**Example:**
+
+```python
+from trendspyg import download_google_trends_rss_batch
+
+# Fetch multiple countries with progress bar
+results = download_google_trends_rss_batch(
+    ['US', 'GB', 'CA', 'AU'],
+    delay=0.5  # Be nice to Google
+)
+# Output: Fetching trends: 100%|██████████| 4/4
+
+for country, trends in results.items():
+    print(f"{country}: {len(trends)} trends")
+```
+
+---
+
+### download_google_trends_rss_batch_async
+
+Async batch fetching - fastest option for multiple countries.
+
+```python
+async def download_google_trends_rss_batch_async(
+    geos: List[str],
+    include_images: bool = True,
+    include_articles: bool = True,
+    max_articles_per_trend: int = 5,
+    show_progress: bool = True,
+    max_concurrent: int = 10
+) -> Dict[str, List[Dict]]
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `geos` | `List[str]` | required | List of geo codes to fetch |
+| `show_progress` | `bool` | `True` | Show tqdm progress bar |
+| `max_concurrent` | `int` | `10` | Maximum concurrent requests |
+
+**Example:**
+
+```python
+import asyncio
+from trendspyg import download_google_trends_rss_batch_async
+
+async def main():
+    results = await download_google_trends_rss_batch_async(
+        ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'JP'],
+        max_concurrent=5  # Limit to avoid rate limits
+    )
+    return results
+
+all_trends = asyncio.run(main())
+```
+
+---
+
+## CSV Functions
+
+### download_google_trends_csv
+
+Full-featured CSV download with filtering (requires Chrome).
+
+```python
+def download_google_trends_csv(
+    geo: str = 'US',
+    hours: int = 24,
+    category: str = 'all',
+    sort_by: str = 'relevance',
+    active_only: bool = False,
+    output_format: Literal['csv', 'json', 'parquet', 'dataframe'] = 'csv',
+    download_dir: Optional[str] = None
+) -> Union[str, pd.DataFrame]
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `geo` | `str` | `'US'` | Country or US state code |
+| `hours` | `int` | `24` | Time period: 4, 24, 48, or 168 (7 days) |
+| `category` | `str` | `'all'` | Category filter (see Configuration) |
+| `sort_by` | `str` | `'relevance'` | Sort: 'relevance', 'title', 'traffic', 'started' |
+| `active_only` | `bool` | `False` | Only show active/rising trends |
+| `output_format` | `str` | `'csv'` | Output: 'csv', 'json', 'parquet', 'dataframe' |
+| `download_dir` | `str` | `None` | Download directory (default: ./downloads/) |
+
+**Returns:**
+
+- `str` - File path when `output_format` is 'csv', 'json', or 'parquet'
+- `pd.DataFrame` when `output_format='dataframe'`
+
+**Requires:** Chrome browser installed
+
+**Example:**
+
+```python
+from trendspyg import download_google_trends_csv
+
+# Basic usage
+csv_path = download_google_trends_csv(geo='US')
+
+# With filters
+df = download_google_trends_csv(
+    geo='US-CA',
+    hours=168,  # 7 days
+    category='sports',
+    active_only=True,
+    output_format='dataframe'
+)
+```
+
+---
+
+## Cache Functions
+
+### clear_rss_cache
+
+Clear all cached RSS data.
+
+```python
+def clear_rss_cache() -> None
+```
+
+**Example:**
+
+```python
+from trendspyg import clear_rss_cache
+
+clear_rss_cache()  # Clear all cached data
+```
+
+---
+
+### get_rss_cache_stats
+
+Get cache statistics.
+
+```python
+def get_rss_cache_stats() -> Dict[str, Any]
+```
+
+**Returns:**
+
+```python
+{
+    'hits': 10,          # Cache hits
+    'misses': 5,         # Cache misses
+    'size': 8,           # Current entries
+    'max_size': 256,     # Maximum entries
+    'ttl': 300.0,        # TTL in seconds
+    'hit_rate': '66.7%'  # Hit rate percentage
+}
+```
+
+**Example:**
+
+```python
+from trendspyg import get_rss_cache_stats
+
+stats = get_rss_cache_stats()
+print(f"Cache hit rate: {stats['hit_rate']}")
+```
+
+---
+
+### set_rss_cache_ttl
+
+Set cache TTL (Time-To-Live).
+
+```python
+def set_rss_cache_ttl(ttl: float) -> None
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ttl` | `float` | TTL in seconds (0 to disable caching) |
+
+**Example:**
+
+```python
+from trendspyg import set_rss_cache_ttl
+
+set_rss_cache_ttl(600)  # 10 minutes
+set_rss_cache_ttl(0)    # Disable caching
+set_rss_cache_ttl(300)  # Reset to default (5 min)
+```
+
+---
+
+## Exceptions
+
+All exceptions inherit from `TrendspygException`.
+
+```python
+from trendspyg.exceptions import (
+    TrendspygException,      # Base exception
+    InvalidParameterError,   # Invalid input parameters
+    DownloadError,           # Network/download failures
+    RateLimitError,          # Rate limit exceeded (429/403)
+    BrowserError,            # Browser automation failures
+    ParseError,              # Data parsing failures
+)
+```
+
+**Example:**
+
+```python
+from trendspyg import download_google_trends_rss
+from trendspyg.exceptions import InvalidParameterError, RateLimitError
+
+try:
+    trends = download_google_trends_rss(geo='INVALID')
+except InvalidParameterError as e:
+    print(f"Invalid parameter: {e}")
+except RateLimitError as e:
+    print(f"Rate limited: {e}")
+```
+
+---
+
+## Configuration
+
+### Countries (125 total)
+
+```python
+from trendspyg.config import COUNTRIES
+
+# Example: {'US': 'United States', 'GB': 'United Kingdom', ...}
+print(list(COUNTRIES.keys())[:10])
+# ['US', 'GB', 'CA', 'AU', 'IN', 'DE', 'FR', 'BR', 'MX', 'JP']
+```
+
+### US States (51 total)
+
+```python
+from trendspyg.config import US_STATES
+
+# Example: {'US-CA': 'California', 'US-NY': 'New York', ...}
+print(list(US_STATES.keys())[:5])
+# ['US-AL', 'US-AK', 'US-AZ', 'US-AR', 'US-CA']
+```
+
+### Categories (20 total)
+
+```python
+from trendspyg.config import CATEGORIES
+
+# Available categories:
+# 'all', 'sports', 'entertainment', 'business', 'politics',
+# 'technology', 'health', 'science', 'games', 'shopping',
+# 'food', 'travel', 'beauty', 'hobbies', 'climate',
+# 'jobs', 'law', 'pets', 'autos', 'other'
+```
+
+### Time Periods
+
+| Hours | Description |
+|-------|-------------|
+| `4` | Past 4 hours |
+| `24` | Past 24 hours (default) |
+| `48` | Past 48 hours |
+| `168` | Past 7 days |
+
+---
+
+## Type Aliases
+
+```python
+from typing import Literal
+
+OutputFormat = Literal['csv', 'json', 'parquet', 'dataframe']
+RSSOutputFormat = Literal['dict', 'dataframe', 'json', 'csv']
+SortOption = Literal['relevance', 'title', 'traffic', 'started']
+```
+
+---
+
+## Performance Tips
+
+### 1. Use Caching
+
+```python
+# Results cached for 5 minutes by default
+trends = download_google_trends_rss(geo='US')  # Network call
+trends = download_google_trends_rss(geo='US')  # Instant (cached)
+```
+
+### 2. Use Async for Multiple Countries
+
+```python
+# Sequential: ~5 seconds for 10 countries
+# Parallel: ~0.5 seconds for 10 countries
+results = await download_google_trends_rss_batch_async(countries)
+```
+
+### 3. Minimize Data When Possible
+
+```python
+# Faster if you don't need images/articles
+trends = download_google_trends_rss(
+    geo='US',
+    include_images=False,
+    include_articles=False
+)
+```
+
+### 4. Use Shared Sessions
+
+```python
+import aiohttp
+
+async with aiohttp.ClientSession() as session:
+    tasks = [
+        download_google_trends_rss_async(geo=c, session=session)
+        for c in countries
+    ]
+    results = await asyncio.gather(*tasks)
+```
+
+---
+
+## Version
+
+```python
+from trendspyg import __version__
+print(__version__)  # '0.4.0'
+```

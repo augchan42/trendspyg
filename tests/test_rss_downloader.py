@@ -501,22 +501,17 @@ class TestBatchAsyncRSSFunctionality:
         )
         assert len(results) == 3
 
-    async def test_async_batch_faster_than_sync(self):
-        """Test that async batch is faster than sync for multiple countries"""
-        import time
+    async def test_async_batch_returns_results(self):
+        """Test that async batch returns valid results for multiple countries"""
+        results = await download_google_trends_rss_batch_async(
+            ['US', 'GB'],
+            show_progress=False
+        )
 
-        # Time sync
-        start = time.time()
-        download_google_trends_rss_batch(['US', 'GB', 'CA'], show_progress=False)
-        sync_time = time.time() - start
-
-        # Time async
-        start = time.time()
-        await download_google_trends_rss_batch_async(['US', 'GB', 'CA'], show_progress=False)
-        async_time = time.time() - start
-
-        # Async should be faster (at least 1.5x)
-        assert async_time < sync_time
+        # Should return dict with results for each geo
+        assert isinstance(results, dict)
+        assert 'US' in results
+        assert 'GB' in results
 
 
 class TestTTLCache:

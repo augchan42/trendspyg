@@ -131,7 +131,7 @@ def validate_geo(geo: str) -> str:
 
     # Try to find similar matches for helpful error message
     similar = [code for code in list(COUNTRIES.keys()) + list(US_STATES.keys())
-               if code.startswith(geo[0]) if len(geo) > 0][:5]
+               if len(geo) > 0 and code.startswith(geo[0])][:5]
 
     error_msg = f"Invalid geo code '{geo}'."
     if similar:
