@@ -16,17 +16,37 @@ Choose your data source:
 - Use CSV for: Large datasets, time filtering, statistical analysis, quantitative research
 """
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 __author__ = "flack0x"
 __license__ = "MIT"
 
 # Import core downloaders
 from .downloader import download_google_trends_csv
-from .rss_downloader import download_google_trends_rss
+from .rss_downloader import (
+    download_google_trends_rss,
+    download_google_trends_rss_async,
+    download_google_trends_rss_batch,
+    download_google_trends_rss_batch_async,
+)
+
+# Import cache utilities
+from .utils import (
+    clear_rss_cache,
+    get_rss_cache_stats,
+    set_rss_cache_ttl,
+)
 
 # Export public API
 __all__ = [
     "__version__",
-    "download_google_trends_csv",      # Full-featured CSV download (480 trends, filtering)
-    "download_google_trends_rss",      # Fast RSS download (rich media, news articles)
+    # Core downloaders
+    "download_google_trends_csv",              # Full-featured CSV download (480 trends, filtering)
+    "download_google_trends_rss",              # Fast RSS download (rich media, news articles)
+    "download_google_trends_rss_async",        # Async RSS download for parallel fetching
+    "download_google_trends_rss_batch",        # Batch RSS download with progress bar
+    "download_google_trends_rss_batch_async",  # Async batch RSS with progress bar (fastest)
+    # Cache control
+    "clear_rss_cache",                         # Clear all cached RSS data
+    "get_rss_cache_stats",                     # Get cache statistics (hits, misses, size)
+    "set_rss_cache_ttl",                       # Set cache TTL (0 to disable)
 ]
