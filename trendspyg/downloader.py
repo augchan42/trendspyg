@@ -48,28 +48,21 @@ OutputFormat = Literal['csv', 'json', 'parquet', 'dataframe']
 SortOption = Literal['relevance', 'title', 'volume', 'recency']
 
 
-# Category mapping (internal Google names)
+# Category mapping (numeric IDs for Google Trends /trending page)
+# URL format: https://trends.google.com/trending?geo=US&category=18
+# NOTE: These IDs are specific to the /trending page, NOT the same as pytrends API categories
 CATEGORIES: Dict[str, str] = {
     'all': '',
-    'autos': 'autos',
-    'beauty': 'beauty',
-    'business': 'business',
-    'climate': 'climate',
-    'entertainment': 'entertainment',
-    'food': 'food',
-    'games': 'games',
-    'health': 'health',
-    'hobbies': 'hobbies',
-    'jobs': 'jobs',
-    'law': 'law',
-    'other': 'other',
-    'pets': 'pets',
-    'politics': 'politics',
-    'science': 'science',
-    'shopping': 'shopping',
-    'sports': 'sports',
-    'technology': 'tech',
-    'travel': 'travel'
+    'business': '3',         # Business & Finance
+    'health': '7',           # Health
+    'law': '10',             # Law & Government
+    'politics': '14',        # Politics
+    'technology': '18',      # Technology
+    'science': '20',         # Science
+    # Aliases for convenience
+    'tech': '18',            # Alias for technology
+    'gov': '10',             # Alias for law & government
+    'government': '10',      # Alias for law & government
 }
 
 # Time period options (in hours)
@@ -367,10 +360,10 @@ def download_google_trends_csv(
         if hours != 24:
             url += f"&hours={hours}"
 
-        # Add category if not 'all'
+        # Add category if not 'all' (uses numeric ID in URL)
         cat_code = CATEGORIES.get(category.lower(), '')
         if cat_code:
-            url += f"&cat={cat_code}"
+            url += f"&category={cat_code}"
 
         print(f"[INFO] Navigating to: {url}")
         driver.get(url)
@@ -553,8 +546,8 @@ Available countries (geo codes):
   US, CA, UK, AU, IN, JP, DE, FR, BR, MX, ES, IT, RU, KR, and many more
 
 Available categories:
-  all, sports, entertainment, business, politics, technology, health,
-  science, games, shopping, food, travel, beauty, hobbies, climate, etc.
+  all, business, health, law, politics, technology, science
+  Aliases: tech (=technology), gov/government (=law)
         """
     )
 
