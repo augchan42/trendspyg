@@ -875,22 +875,32 @@ def download_google_trends_explore(
 
         print(f"[INFO] Navigating to: {url}")
 
-        # Rate limiting handling - Google Trends is aggressive with 429s
-        max_retries = 3
+        # Rate limiting handling with exponential backoff + jitter
+        # Using manual implementation (tenacity optional dependency)
+        import random
+
+        max_retries = 5
+        base_delay = 5  # seconds
+
         for attempt in range(max_retries):
             driver.get(url)
             time.sleep(2)
 
             # Check for rate limiting
             if "429" in driver.title or "Too Many Requests" in driver.title:
-                wait_time = (attempt + 1) * 10  # 10s, 20s, 30s
-                print(f"[WARN] Rate limited (429). Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                # Exponential backoff: 5, 10, 20, 40, 80 seconds
+                # Plus jitter: random 0-50% of delay
+                delay = base_delay * (2 ** attempt)
+                jitter = delay * random.uniform(0, 0.5)
+                wait_time = delay + jitter
+                print(f"[WARN] Rate limited (429). Waiting {wait_time:.1f}s before retry {attempt + 1}/{max_retries}...")
+                print(f"       (base: {delay}s + jitter: {jitter:.1f}s)")
                 time.sleep(wait_time)
                 continue
             break
         else:
             raise BrowserError(
-                "Google Trends rate limit (429) - too many requests.\n"
+                "Google Trends rate limit (429) - too many requests after 5 retries.\n"
                 "Try again later or reduce request frequency.\n"
                 "Consider using proxies for high-volume access."
             )

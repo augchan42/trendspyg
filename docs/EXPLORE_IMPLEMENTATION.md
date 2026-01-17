@@ -302,25 +302,50 @@ def validate_evergreen_potential(topic: str, geo: str = 'US') -> dict:
 
 ## Implementation Steps
 
-### Phase 1: Core Function
-1. [ ] Add `EXPLORE_CATEGORIES` dict with pytrends-style IDs
-2. [ ] Add `validate_date_range()` function
-3. [ ] Add `download_google_trends_explore()` function
-4. [ ] Add `parse_explore_csv()` for multi-section parsing
-5. [ ] Export new function in `__init__.py`
+### Phase 1: Core Function ✅ DONE
+1. [x] Add `EXPLORE_CATEGORIES` dict with pytrends-style IDs
+2. [x] Add `validate_date_range()` function
+3. [x] Add `download_google_trends_explore()` function
+4. [x] Add `parse_explore_csv()` for multi-section parsing
+5. [x] Export new function in `__init__.py`
+6. [x] Add rate limiting handling (429 retry logic)
 
-### Phase 2: CSV Parsing
-1. [ ] Handle multi-section CSV format
-2. [ ] Parse interest_over_time to DataFrame
-3. [ ] Parse related_queries (TOP and RISING)
-4. [ ] Parse related_topics (TOP and RISING)
-5. [ ] Handle regional interest data
+### Phase 2: UI Selectors 🚧 IN PROGRESS
+The explore page UI differs from trending page. Need to:
+1. [ ] Identify correct download button selectors
+2. [ ] Handle widget menu (3-dot icon) navigation
+3. [ ] Test with different query types
+4. [ ] Handle edge cases (no data, errors)
 
-### Phase 3: Integration
+**Blocker**: Google's aggressive rate limiting (429 errors) makes iterative
+testing difficult. Need to:
+- Wait between test runs
+- Consider proxy rotation for development
+- Or use manual testing with visible browser
+
+### Phase 3: CSV Parsing ✅ DONE
+1. [x] Handle multi-section CSV format
+2. [x] Parse interest_over_time to DataFrame
+3. [x] Parse related_queries (TOP and RISING)
+4. [x] Parse related_topics (TOP and RISING)
+5. [x] Handle regional interest data
+
+### Phase 4: Integration (pending Phase 2)
 1. [ ] Create `evergreen_validator.py` script
 2. [ ] Integrate with `agent-intake.json` pipeline
 3. [ ] Add validation step to `trends_discovery.py`
 4. [ ] Update ADR-084 with explore endpoint docs
+
+## Current Status
+
+**Date**: 2026-01-17
+
+The core implementation is complete but needs UI selector refinement:
+- Function signature and validation: ✅
+- URL building: ✅
+- Rate limit handling: ✅
+- CSV parsing: ✅
+- Download button detection: 🚧 (blocked by rate limiting during testing)
 
 ## Testing
 
