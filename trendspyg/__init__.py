@@ -21,7 +21,12 @@ __author__ = "flack0x"
 __license__ = "MIT"
 
 # Import core downloaders
-from .downloader import download_google_trends_csv
+from .downloader import (
+    download_google_trends_csv,
+    download_google_trends_explore,
+    EXPLORE_CATEGORIES,
+    EXPLORE_DATE_PRESETS,
+)
 from .rss_downloader import (
     download_google_trends_rss,
     download_google_trends_rss_async,
@@ -41,10 +46,14 @@ __all__ = [
     "__version__",
     # Core downloaders
     "download_google_trends_csv",              # Full-featured CSV download (480 trends, filtering)
+    "download_google_trends_explore",          # Historical interest analysis (5yr, evergreen validation)
     "download_google_trends_rss",              # Fast RSS download (rich media, news articles)
     "download_google_trends_rss_async",        # Async RSS download for parallel fetching
     "download_google_trends_rss_batch",        # Batch RSS download with progress bar
     "download_google_trends_rss_batch_async",  # Async batch RSS with progress bar (fastest)
+    # Constants
+    "EXPLORE_CATEGORIES",                      # Category IDs for explore endpoint
+    "EXPLORE_DATE_PRESETS",                    # Valid date range presets
     # Cache control
     "clear_rss_cache",                         # Clear all cached RSS data
     "get_rss_cache_stats",                     # Get cache statistics (hits, misses, size)

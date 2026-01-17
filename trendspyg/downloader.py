@@ -76,6 +76,58 @@ TIME_PERIODS: Dict[str, int] = {
 # Sort options
 SORT_OPTIONS: List[str] = ['relevance', 'title', 'volume', 'recency']
 
+# ============================================================================
+# EXPLORE ENDPOINT CONSTANTS (different from /trending)
+# ============================================================================
+
+# Category IDs for /trends/explore (pytrends-style, different from /trending!)
+# Full list: https://github.com/pat310/google-trends-api/wiki/Google-Trends-Categories
+EXPLORE_CATEGORIES: Dict[str, int] = {
+    'all': 0,
+    'arts_entertainment': 3,
+    'autos_vehicles': 47,
+    'beauty_fitness': 44,
+    'books_literature': 22,
+    'business_industrial': 12,
+    'computers_electronics': 5,
+    'finance': 7,
+    'food_drink': 71,
+    'games': 8,
+    'health': 45,
+    'hobbies_leisure': 65,
+    'home_garden': 11,
+    'internet_telecom': 13,
+    'jobs_education': 958,
+    'law_government': 19,
+    'news': 16,
+    'online_communities': 299,
+    'people_society': 14,
+    'pets_animals': 66,
+    'real_estate': 29,
+    'reference': 533,
+    'science': 174,
+    'shopping': 18,
+    'sports': 20,
+    'travel': 67,
+    # Useful subcategories for Long View
+    'ai_ml': 1299,              # Machine Learning & AI
+    'computer_security': 314,   # Cybersecurity
+    'investing': 107,
+    'politics': 396,
+    'banking': 37,
+    'accounting': 278,
+}
+
+# Date range presets for explore endpoint
+EXPLORE_DATE_PRESETS: List[str] = [
+    'today 5-y',   # Past 5 years (weekly data)
+    'today 12-m',  # Past 12 months (weekly data)
+    'today 3-m',   # Past 3 months (daily data)
+    'today 1-m',   # Past 1 month (daily data)
+    'now 7-d',     # Past 7 days (hourly data)
+    'now 1-d',     # Past 24 hours (minute data)
+]
+
 
 def _download_with_retry(download_func: Callable[[], Any], max_retries: int = 3) -> Any:
     """Wrapper to retry download with exponential backoff.
@@ -516,6 +568,456 @@ def download_google_trends_csv(
             "This is an unexpected error. Please report it at:\n"
             "https://github.com/flack0x/trendspyg/issues"
         )
+
+    finally:
+        driver.quit()
+
+
+# ============================================================================
+# EXPLORE ENDPOINT FUNCTIONS
+# ============================================================================
+
+def validate_date_range(date_range: str) -> str:
+    """Validate date range parameter for explore endpoint.
+
+    Args:
+        date_range: Preset like 'today 5-y' or custom 'YYYY-MM-DD YYYY-MM-DD'
+
+    Returns:
+        Validated date range string
+
+    Raises:
+        InvalidParameterError: If date range format is invalid
+    """
+    import re
+
+    # Check presets
+    if date_range in EXPLORE_DATE_PRESETS:
+        return date_range
+
+    # Check custom range format: YYYY-MM-DD YYYY-MM-DD
+    pattern = r'^\d{4}-\d{2}-\d{2} \d{4}-\d{2}-\d{2}$'
+    if re.match(pattern, date_range):
+        return date_range
+
+    raise InvalidParameterError(
+        f"Invalid date_range: '{date_range}'\n\n"
+        f"Valid presets: {', '.join(EXPLORE_DATE_PRESETS)}\n"
+        f"Or custom range: 'YYYY-MM-DD YYYY-MM-DD' (e.g., '2024-01-01 2024-12-31')"
+    )
+
+
+def validate_explore_category(category: Union[str, int, None]) -> Optional[int]:
+    """Validate category for explore endpoint.
+
+    Args:
+        category: Category name or ID
+
+    Returns:
+        Category ID as int, or None if 'all'/0
+
+    Raises:
+        InvalidParameterError: If category is invalid
+    """
+    if category is None:
+        return None
+
+    # If already an int
+    if isinstance(category, int):
+        if category == 0:
+            return None
+        return category
+
+    # String lookup
+    cat_lower = category.lower().replace(' ', '_').replace('-', '_')
+    if cat_lower in EXPLORE_CATEGORIES:
+        cat_id = EXPLORE_CATEGORIES[cat_lower]
+        return None if cat_id == 0 else cat_id
+
+    # Try parsing as int string
+    try:
+        cat_id = int(category)
+        return None if cat_id == 0 else cat_id
+    except ValueError:
+        pass
+
+    raise InvalidParameterError(
+        f"Invalid explore category: '{category}'\n\n"
+        f"Available categories: {', '.join(sorted(EXPLORE_CATEGORIES.keys()))}\n"
+        f"Or use numeric category ID directly."
+    )
+
+
+def parse_explore_csv(csv_path: str) -> Dict[str, Any]:
+    """Parse multi-section explore CSV into structured data.
+
+    The explore CSV contains multiple sections separated by blank lines:
+    - Interest over time (time series)
+    - Interest by region
+    - Related topics (TOP and RISING)
+    - Related queries (TOP and RISING)
+
+    Args:
+        csv_path: Path to downloaded CSV
+
+    Returns:
+        Dict with sections: interest_over_time, interest_by_region,
+        related_topics, related_queries
+    """
+    import pandas as pd
+    import io
+
+    result = {
+        'interest_over_time': None,
+        'interest_by_region': None,
+        'related_topics_top': None,
+        'related_topics_rising': None,
+        'related_queries_top': None,
+        'related_queries_rising': None,
+    }
+
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Split into sections by double newlines
+    sections = content.split('\n\n')
+
+    current_section = None
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+
+        lines = section.split('\n')
+        header = lines[0].lower() if lines else ''
+
+        # Identify section type
+        if 'interest over time' in header or (len(lines) > 1 and ('week' in lines[1].lower() or 'day' in lines[1].lower() or 'month' in lines[1].lower())):
+            # Skip the header line if it's a label
+            data_start = 1 if 'interest' in header else 0
+            data = '\n'.join(lines[data_start:])
+            if data.strip():
+                try:
+                    df = pd.read_csv(io.StringIO(data))
+                    # Convert date column
+                    date_col = df.columns[0]
+                    df[date_col] = pd.to_datetime(df[date_col])
+                    df.set_index(date_col, inplace=True)
+                    result['interest_over_time'] = df
+                except Exception as e:
+                    print(f"[WARN] Failed to parse interest_over_time: {e}")
+
+        elif 'interest by' in header or 'region' in header.lower():
+            data_start = 1 if 'interest' in header or 'region' in header else 0
+            data = '\n'.join(lines[data_start:])
+            if data.strip():
+                try:
+                    result['interest_by_region'] = pd.read_csv(io.StringIO(data))
+                except Exception as e:
+                    print(f"[WARN] Failed to parse interest_by_region: {e}")
+
+        elif 'related topics' in header.lower():
+            current_section = 'topics'
+
+        elif 'related queries' in header.lower():
+            current_section = 'queries'
+
+        elif header.upper() == 'TOP' and current_section:
+            data = '\n'.join(lines[1:])
+            if data.strip():
+                try:
+                    key = f'related_{current_section}_top'
+                    result[key] = pd.read_csv(io.StringIO(data))
+                except Exception:
+                    pass
+
+        elif header.upper() == 'RISING' and current_section:
+            data = '\n'.join(lines[1:])
+            if data.strip():
+                try:
+                    key = f'related_{current_section}_rising'
+                    result[key] = pd.read_csv(io.StringIO(data))
+                except Exception:
+                    pass
+
+    return result
+
+
+def download_google_trends_explore(
+    query: Union[str, List[str], None] = None,
+    date_range: str = 'today 5-y',
+    geo: str = 'US',
+    category: Union[str, int, None] = None,
+    hl: str = 'en-US',
+    headless: bool = True,
+    download_dir: Optional[str] = None,
+    output_format: OutputFormat = 'dataframe',
+) -> Union[Dict[str, Any], 'pd.DataFrame', str, None]:
+    """
+    Download Google Trends explore data for historical interest analysis.
+
+    This endpoint provides historical interest data over time, useful for
+    validating evergreen content potential (stable interest over years vs
+    news-driven spikes).
+
+    Args:
+        query: Search term(s) to analyze. Up to 5 terms for comparison.
+               If None, browses by category (requires category param).
+        date_range: Time period. Presets: 'today 5-y', 'today 12-m', 'today 3-m',
+                   'today 1-m', 'now 7-d', 'now 1-d'.
+                   Or custom: '2024-01-01 2024-12-31'
+        geo: Country code (US, HK, GB, etc.)
+        category: Category filter (name or ID). See EXPLORE_CATEGORIES.
+        hl: Language code for results (e.g., 'en-US', 'zh-TW')
+        headless: Run browser in headless mode
+        download_dir: Directory for CSV files
+        output_format: 'dataframe' returns interest_over_time DataFrame,
+                      'csv' returns path, 'json' returns parsed dict
+
+    Returns:
+        - If output_format='dataframe': DataFrame of interest over time
+        - If output_format='csv': Path to downloaded CSV
+        - If output_format='json': Dict with all parsed sections
+
+    Example:
+        # Check 5-year interest for "data governance"
+        df = download_google_trends_explore(
+            query="data governance",
+            date_range="today 5-y",
+            geo="US"
+        )
+        # df shows weekly interest values (0-100) over 5 years
+        # Stable line = evergreen, spike-and-fade = news-driven
+
+        # Compare multiple terms
+        df = download_google_trends_explore(
+            query=["bitcoin", "ethereum", "dogecoin"],
+            date_range="today 12-m",
+            geo="US"
+        )
+    """
+    # Validate parameters
+    geo = validate_geo(geo)
+    date_range = validate_date_range(date_range)
+    cat_id = validate_explore_category(category)
+
+    # Normalize query to list
+    if query is None:
+        queries = []
+    elif isinstance(query, str):
+        queries = [query]
+    else:
+        queries = list(query)
+
+    if len(queries) > 5:
+        raise InvalidParameterError("Maximum 5 queries allowed for comparison")
+
+    if not queries and not cat_id:
+        raise InvalidParameterError(
+            "Either query or category must be specified.\n"
+            "Use query='search term' or category='finance' (etc.)"
+        )
+
+    # Setup download directory
+    if download_dir is None:
+        download_dir = os.path.join(os.getcwd(), 'downloads')
+    download_dir = os.path.abspath(download_dir)
+    os.makedirs(download_dir, exist_ok=True)
+
+    # Get existing files for detection
+    existing_files = set(f for f in os.listdir(download_dir) if f.endswith('.csv'))
+
+    # Setup Chrome
+    chrome_options = Options()
+    prefs = {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    if headless:
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+
+    chrome_options.add_argument("--log-level=3")
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+    print(f"[INFO] Opening Google Trends Explore...")
+    print(f"       Query: {queries if queries else '(category browse)'}")
+    print(f"       Date range: {date_range}")
+    print(f"       Location: {geo}")
+    print(f"       Category: {category or 'all'}")
+    print(f"       Language: {hl}")
+
+    try:
+        driver = webdriver.Chrome(options=chrome_options)
+    except WebDriverException as e:
+        raise BrowserError(f"Failed to start Chrome browser: {e}")
+
+    try:
+        # Build URL
+        # URL encode the date range (space -> %20)
+        date_encoded = date_range.replace(' ', '%20')
+        url = f"https://trends.google.com/trends/explore?date={date_encoded}&geo={geo}&hl={hl}"
+
+        if queries:
+            # URL encode queries and join with comma
+            from urllib.parse import quote
+            q_encoded = ','.join(quote(q) for q in queries)
+            url += f"&q={q_encoded}"
+
+        if cat_id:
+            url += f"&cat={cat_id}"
+
+        print(f"[INFO] Navigating to: {url}")
+
+        # Rate limiting handling - Google Trends is aggressive with 429s
+        max_retries = 3
+        for attempt in range(max_retries):
+            driver.get(url)
+            time.sleep(2)
+
+            # Check for rate limiting
+            if "429" in driver.title or "Too Many Requests" in driver.title:
+                wait_time = (attempt + 1) * 10  # 10s, 20s, 30s
+                print(f"[WARN] Rate limited (429). Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                time.sleep(wait_time)
+                continue
+            break
+        else:
+            raise BrowserError(
+                "Google Trends rate limit (429) - too many requests.\n"
+                "Try again later or reduce request frequency.\n"
+                "Consider using proxies for high-volume access."
+            )
+
+        # Wait for page to load - explore page has different UI than trending
+        # First wait for any content to appear (chart, error message, or widget)
+        print("[INFO] Waiting for page content...")
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div[class*='line-chart'], div[class*='widget'], div[class*='explore']"))
+            )
+        except TimeoutException:
+            # Page might have loaded but with different structure
+            pass
+
+        time.sleep(3)  # Let charts render fully
+
+        # The explore page uses a hamburger menu (3 dots) for each widget
+        # Look for the menu button on the "Interest over time" widget
+        print("[INFO] Looking for download option...")
+
+        # Try multiple selector strategies
+        download_found = False
+
+        # Strategy 1: Look for "more_vert" icon (3-dot menu)
+        menu_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='more'], button[class*='menu'], span[class*='more-vert']")
+        if menu_buttons:
+            print(f"[DEBUG] Found {len(menu_buttons)} menu buttons")
+            driver.execute_script("arguments[0].click();", menu_buttons[0])
+            time.sleep(1)
+
+        # Strategy 2: Look for download/export text in any button or link
+        download_elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'DOWNLOAD', 'download'), 'download') or contains(translate(text(), 'EXPORT', 'export'), 'export') or contains(translate(text(), 'CSV', 'csv'), 'csv')]")
+        if download_elements:
+            print(f"[DEBUG] Found {len(download_elements)} download-related elements")
+            for elem in download_elements:
+                try:
+                    if elem.is_displayed():
+                        driver.execute_script("arguments[0].click();", elem)
+                        download_found = True
+                        time.sleep(1)
+                        break
+                except:
+                    continue
+
+        # Strategy 3: Look for widget action items
+        if not download_found:
+            action_items = driver.find_elements(By.CSS_SELECTOR, ".widget-actions-item, [class*='download'], [class*='export']")
+            if action_items:
+                print(f"[DEBUG] Found {len(action_items)} action items")
+                for item in action_items:
+                    try:
+                        if item.is_displayed():
+                            driver.execute_script("arguments[0].click();", item)
+                            download_found = True
+                            time.sleep(1)
+                            break
+                    except:
+                        continue
+
+        # Strategy 4: Try keyboard shortcut (some pages support Ctrl+Shift+E for export)
+        if not download_found:
+            print("[DEBUG] Trying alternate download methods...")
+            # Check for any clickable element with download icon
+            svg_buttons = driver.find_elements(By.XPATH, "//button[.//svg or .//mat-icon]")
+            for btn in svg_buttons[:5]:  # Check first 5
+                try:
+                    aria = btn.get_attribute('aria-label') or ''
+                    if 'download' in aria.lower() or 'export' in aria.lower() or 'csv' in aria.lower():
+                        driver.execute_script("arguments[0].click();", btn)
+                        download_found = True
+                        time.sleep(1)
+                        break
+                except:
+                    continue
+
+        if not download_found:
+            print("[WARN] Could not find download button - page structure may have changed")
+            print("[DEBUG] Page title:", driver.title)
+            print("[DEBUG] Trying to save page source for debugging...")
+
+        # Wait for download
+        print("[INFO] Waiting for file download...")
+        max_wait = 30
+        csv_path = None
+
+        for _ in range(max_wait):
+            time.sleep(1)
+            current_files = set(f for f in os.listdir(download_dir) if f.endswith('.csv'))
+            new_files = current_files - existing_files
+
+            # Filter out partial downloads
+            new_files = {f for f in new_files if not f.endswith('.crdownload')}
+
+            if new_files:
+                # Get most recent
+                newest = max(new_files, key=lambda f: os.path.getmtime(os.path.join(download_dir, f)))
+                csv_path = os.path.join(download_dir, newest)
+                print(f"[OK] Downloaded: {newest}")
+                break
+
+        if not csv_path:
+            raise DownloadError("Download timed out - no CSV file detected")
+
+        # Return based on format
+        if output_format == 'csv':
+            return csv_path
+
+        # Parse the CSV
+        parsed = parse_explore_csv(csv_path)
+
+        if output_format == 'dataframe':
+            if parsed['interest_over_time'] is not None:
+                return parsed['interest_over_time']
+            else:
+                print("[WARN] No interest_over_time data found, returning empty DataFrame")
+                import pandas as pd
+                return pd.DataFrame()
+
+        # json format - return full parsed dict
+        return parsed
+
+    except (InvalidParameterError, BrowserError, DownloadError):
+        raise
+
+    except Exception as e:
+        raise BrowserError(f"Unexpected error: {type(e).__name__}: {e}")
 
     finally:
         driver.quit()
