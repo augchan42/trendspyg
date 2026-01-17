@@ -905,82 +905,44 @@ def download_google_trends_explore(
                 "Consider using proxies for high-volume access."
             )
 
-        # Wait for page to load - explore page has different UI than trending
-        # First wait for any content to appear (chart, error message, or widget)
+        # Wait for page to load - look for the CSV export button on widgets
         print("[INFO] Waiting for page content...")
         try:
+            # Wait for the CSV download button to appear
+            # Selector: button.widget-actions-item.export[title="CSV"]
             WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div[class*='line-chart'], div[class*='widget'], div[class*='explore']"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'button.widget-actions-item.export[title="CSV"]'))
             )
+            print("[OK] Found CSV export button")
         except TimeoutException:
-            # Page might have loaded but with different structure
-            pass
+            # Try alternate: just the export class
+            try:
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, '.widget-actions-item.export'))
+                )
+                print("[OK] Found export button (alternate selector)")
+            except TimeoutException:
+                print("[WARN] Could not find CSV export button")
+                print("[DEBUG] Page title:", driver.title)
 
-        time.sleep(3)  # Let charts render fully
+        time.sleep(2)  # Let charts render fully
 
-        # The explore page uses a hamburger menu (3 dots) for each widget
-        # Look for the menu button on the "Interest over time" widget
-        print("[INFO] Looking for download option...")
+        # Click the first CSV export button (Interest over time widget)
+        print("[INFO] Clicking CSV download...")
+        csv_buttons = driver.find_elements(By.CSS_SELECTOR, 'button.widget-actions-item.export[title="CSV"]')
 
-        # Try multiple selector strategies
-        download_found = False
+        if not csv_buttons:
+            # Fallback to broader selector
+            csv_buttons = driver.find_elements(By.CSS_SELECTOR, '.widget-actions-item.export')
 
-        # Strategy 1: Look for "more_vert" icon (3-dot menu)
-        menu_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='more'], button[class*='menu'], span[class*='more-vert']")
-        if menu_buttons:
-            print(f"[DEBUG] Found {len(menu_buttons)} menu buttons")
-            driver.execute_script("arguments[0].click();", menu_buttons[0])
+        if csv_buttons:
+            print(f"[DEBUG] Found {len(csv_buttons)} CSV export buttons")
+            # Click the first one (Interest over time)
+            driver.execute_script("arguments[0].click();", csv_buttons[0])
             time.sleep(1)
-
-        # Strategy 2: Look for download/export text in any button or link
-        download_elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'DOWNLOAD', 'download'), 'download') or contains(translate(text(), 'EXPORT', 'export'), 'export') or contains(translate(text(), 'CSV', 'csv'), 'csv')]")
-        if download_elements:
-            print(f"[DEBUG] Found {len(download_elements)} download-related elements")
-            for elem in download_elements:
-                try:
-                    if elem.is_displayed():
-                        driver.execute_script("arguments[0].click();", elem)
-                        download_found = True
-                        time.sleep(1)
-                        break
-                except:
-                    continue
-
-        # Strategy 3: Look for widget action items
-        if not download_found:
-            action_items = driver.find_elements(By.CSS_SELECTOR, ".widget-actions-item, [class*='download'], [class*='export']")
-            if action_items:
-                print(f"[DEBUG] Found {len(action_items)} action items")
-                for item in action_items:
-                    try:
-                        if item.is_displayed():
-                            driver.execute_script("arguments[0].click();", item)
-                            download_found = True
-                            time.sleep(1)
-                            break
-                    except:
-                        continue
-
-        # Strategy 4: Try keyboard shortcut (some pages support Ctrl+Shift+E for export)
-        if not download_found:
-            print("[DEBUG] Trying alternate download methods...")
-            # Check for any clickable element with download icon
-            svg_buttons = driver.find_elements(By.XPATH, "//button[.//svg or .//mat-icon]")
-            for btn in svg_buttons[:5]:  # Check first 5
-                try:
-                    aria = btn.get_attribute('aria-label') or ''
-                    if 'download' in aria.lower() or 'export' in aria.lower() or 'csv' in aria.lower():
-                        driver.execute_script("arguments[0].click();", btn)
-                        download_found = True
-                        time.sleep(1)
-                        break
-                except:
-                    continue
-
-        if not download_found:
-            print("[WARN] Could not find download button - page structure may have changed")
+        else:
+            print("[WARN] No CSV export buttons found - page may have no data or different structure")
             print("[DEBUG] Page title:", driver.title)
-            print("[DEBUG] Trying to save page source for debugging...")
 
         # Wait for download
         print("[INFO] Waiting for file download...")
