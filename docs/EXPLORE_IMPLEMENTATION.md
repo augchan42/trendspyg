@@ -340,16 +340,33 @@ testing difficult. Need to:
 
 **Date**: 2026-01-17
 
-The core implementation is complete but needs UI selector refinement:
+### Selenium Version (download_google_trends_explore)
 - Function signature and validation: ✅
 - URL building: ✅
 - Rate limit handling: ✅
 - CSV parsing: ✅
-- Download button detection: 🚧 (blocked by rate limiting during testing)
+- Download button detection: ✅ (selector: `button.widget-actions-item.export[title="CSV"]`)
+
+### Stealth Version (download_google_trends_explore_stealth) ✅ NEW
+Uses Scrapling's StealthyFetcher with patchright for anti-detection:
+- Anti-fingerprinting (canvas noise, WebRTC blocking): ✅
+- Real Chrome browser support: ✅
+- CDP connection to existing Chrome: ✅
+- Persistent browser profiles: ✅
+- Google referer spoofing: ✅
+
+**Install stealth dependencies:**
+```bash
+pip install scrapling[all]
+scrapling install  # Install browser dependencies
+```
 
 ## Testing
 
+### Selenium Version
 ```python
+from trendspyg import download_google_trends_explore
+
 # Test 1: Basic 5-year query
 result = download_google_trends_explore(
     query="artificial intelligence",
@@ -374,6 +391,46 @@ result = download_google_trends_explore(
     geo="HK"
 )
 # Returns trending topics in AI/ML category over 5 years
+```
+
+### Stealth Version (Recommended for Production)
+```python
+from trendspyg import download_google_trends_explore_stealth
+
+# Test 1: Basic stealth mode (visible browser for CAPTCHA)
+df = download_google_trends_explore_stealth(
+    query="data governance",
+    date_range="today 5-y",
+    geo="US",
+    headless=False  # See what's happening
+)
+
+# Test 2: Connect to your running Chrome (BEST for avoiding CAPTCHA)
+# First start Chrome: google-chrome --remote-debugging-port=9222
+df = download_google_trends_explore_stealth(
+    query="bitcoin",
+    date_range="today 5-y",
+    cdp_url="http://127.0.0.1:9222"
+)
+
+# Test 3: Use real Chrome with persistent profile
+df = download_google_trends_explore_stealth(
+    query="ethereum",
+    date_range="today 12-m",
+    real_chrome=True,
+    user_data_dir="~/.config/google-chrome"
+)
+
+# Test 4: Full stealth options
+df = download_google_trends_explore_stealth(
+    query="artificial intelligence",
+    date_range="today 5-y",
+    geo="US",
+    headless=False,
+    hide_canvas=True,      # Anti-fingerprinting
+    block_webrtc=True,     # Prevent IP leak
+    timeout=90000          # 90s timeout
+)
 ```
 
 ## References
