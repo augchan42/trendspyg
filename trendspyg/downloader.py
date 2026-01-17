@@ -843,6 +843,8 @@ def download_google_trends_explore(
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
 
+    # Set window size to ensure elements are visible (not collapsed/hidden)
+    chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--log-level=3")
     chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
@@ -906,43 +908,162 @@ def download_google_trends_explore(
             )
 
         # Wait for page to load - look for the CSV export button on widgets
-        print("[INFO] Waiting for page content...")
+        # The explore page uses AngularJS and needs time for charts to render
+        print("[INFO] Waiting for page content and charts to render...")
+        time.sleep(8)  # Initial wait for AngularJS to bootstrap
+
+        # Verify page loaded properly (not showing URL as title, not error page)
+        page_title = driver.title
+        if page_title == url or 'Error' in page_title or not page_title:
+            print(f"[WARN] Page may not have loaded properly. Title: {page_title}")
+            # Try refreshing
+            print("[INFO] Refreshing page...")
+            driver.refresh()
+            time.sleep(10)
+
         try:
             # Wait for the CSV download button to appear
             # Selector: button.widget-actions-item.export[title="CSV"]
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 30).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'button.widget-actions-item.export[title="CSV"]'))
             )
             print("[OK] Found CSV export button")
         except TimeoutException:
             # Try alternate: just the export class
             try:
-                WebDriverWait(driver, 5).until(
+                WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, '.widget-actions-item.export'))
                 )
                 print("[OK] Found export button (alternate selector)")
             except TimeoutException:
+                # Debug: list all buttons on page
+                all_buttons = driver.find_elements(By.TAG_NAME, 'button')
+                print(f"[DEBUG] Found {len(all_buttons)} buttons total")
+                for btn in all_buttons[:10]:
+                    try:
+                        cls = btn.get_attribute('class') or ''
+                        title = btn.get_attribute('title') or ''
+                        print(f"[DEBUG]   Button: class='{cls[:50]}' title='{title}'")
+                    except:
+                        pass
                 print("[WARN] Could not find CSV export button")
                 print("[DEBUG] Page title:", driver.title)
 
-        time.sleep(2)  # Let charts render fully
+        time.sleep(3)  # Additional wait for charts to fully render
+
+        # The export button may only appear when hovering over the widget
+        # Find the widget container and hover over it
+        print("[INFO] Looking for chart widgets...")
+
+        # Try to find widget containers
+        widgets = driver.find_elements(By.CSS_SELECTOR, 'widget, .widget, [class*="widget"], trends-widget')
+        if widgets:
+            print(f"[DEBUG] Found {len(widgets)} widget containers")
+            # Hover over first widget to reveal actions
+            from selenium.webdriver.common.action_chains import ActionChains
+            actions = ActionChains(driver)
+            actions.move_to_element(widgets[0]).perform()
+            time.sleep(2)  # Wait for hover effect
+
+        # Also try scrolling down a bit to ensure chart is in view
+        driver.execute_script("window.scrollTo(0, 300);")
+        time.sleep(1)
 
         # Click the first CSV export button (Interest over time widget)
-        print("[INFO] Clicking CSV download...")
+        print("[INFO] Looking for CSV download button...")
         csv_buttons = driver.find_elements(By.CSS_SELECTOR, 'button.widget-actions-item.export[title="CSV"]')
 
         if not csv_buttons:
             # Fallback to broader selector
             csv_buttons = driver.find_elements(By.CSS_SELECTOR, '.widget-actions-item.export')
 
+        if not csv_buttons:
+            # Try finding by title attribute alone
+            csv_buttons = driver.find_elements(By.CSS_SELECTOR, 'button[title="CSV"]')
+
+        if not csv_buttons:
+            # Try finding by ng-click="export()" which is the actual export action
+            csv_buttons = driver.find_elements(By.CSS_SELECTOR, 'button[ng-click="export()"]')
+            if csv_buttons:
+                print(f"[DEBUG] Found {len(csv_buttons)} buttons with ng-click='export()'")
+
+        if not csv_buttons:
+            # Look for the specific icon: <i class="material-icons-extended gray">file_download</i>
+            # Then get its parent button
+            download_icons = driver.find_elements(By.XPATH, '//i[@class="material-icons-extended gray" and text()="file_download"]')
+            if download_icons:
+                print(f"[DEBUG] Found {len(download_icons)} 'file_download' icons with exact class")
+                for icon in download_icons:
+                    try:
+                        parent = icon.find_element(By.XPATH, '..')
+                        if parent.tag_name == 'button':
+                            # Verify this is the export button (has title="CSV" or class contains "export")
+                            title = parent.get_attribute('title') or ''
+                            cls = parent.get_attribute('class') or ''
+                            if 'CSV' in title or 'export' in cls:
+                                csv_buttons = [parent]
+                                print(f"[DEBUG] Found export button: title='{title}', class='{cls[:50]}'")
+                                break
+                    except:
+                        continue
+
+        if not csv_buttons:
+            # Last resort: find all file_download icons and take the one in widget-actions
+            all_icons = driver.find_elements(By.XPATH, '//i[contains(text(), "file_download")]')
+            print(f"[DEBUG] Found {len(all_icons)} total 'file_download' text icons")
+            for icon in all_icons:
+                try:
+                    parent = icon.find_element(By.XPATH, '..')
+                    grandparent = parent.find_element(By.XPATH, '..')
+                    # Check if any ancestor has widget-actions class
+                    ancestors = driver.execute_script(
+                        "var el = arguments[0]; var path = []; while (el.parentElement) { path.push(el.className); el = el.parentElement; } return path;",
+                        icon
+                    )
+                    if any('widget-actions' in a for a in ancestors):
+                        csv_buttons = [parent]
+                        print(f"[DEBUG] Found icon in widget-actions hierarchy")
+                        break
+                except:
+                    continue
+
         if csv_buttons:
-            print(f"[DEBUG] Found {len(csv_buttons)} CSV export buttons")
+            print(f"[OK] Found {len(csv_buttons)} CSV export button(s)")
+            btn = csv_buttons[0]
+            # Debug: print button details
+            try:
+                print(f"[DEBUG] Button tag: {btn.tag_name}")
+                print(f"[DEBUG] Button class: {btn.get_attribute('class')}")
+                print(f"[DEBUG] Button title: {btn.get_attribute('title')}")
+                print(f"[DEBUG] Button onclick: {btn.get_attribute('onclick')}")
+                print(f"[DEBUG] Button ng-click: {btn.get_attribute('ng-click')}")
+            except:
+                pass
+
             # Click the first one (Interest over time)
-            driver.execute_script("arguments[0].click();", csv_buttons[0])
-            time.sleep(1)
+            print("[INFO] Clicking export button...")
+            driver.execute_script("arguments[0].click();", btn)
+            time.sleep(2)
+
+            # Check if any modal/dialog appeared
+            dialogs = driver.find_elements(By.CSS_SELECTOR, 'md-dialog, .md-dialog, [role="dialog"]')
+            if dialogs:
+                print(f"[DEBUG] Dialog appeared after click - {len(dialogs)} dialog(s)")
+
+            # Check downloads folder immediately
+            current_files = set(f for f in os.listdir(download_dir) if f.endswith('.csv'))
+            new_after_click = current_files - existing_files
+            print(f"[DEBUG] Files in download dir after click: {len(current_files)} total, {len(new_after_click)} new")
+
         else:
             print("[WARN] No CSV export buttons found - page may have no data or different structure")
             print("[DEBUG] Page title:", driver.title)
+            # Debug: print page source snippet
+            source = driver.page_source
+            if 'file_download' in source:
+                print("[DEBUG] 'file_download' found in page source - button exists but selector failed")
+            if 'widget-actions' in source:
+                print("[DEBUG] 'widget-actions' found in page source")
 
         # Wait for download
         print("[INFO] Waiting for file download...")
