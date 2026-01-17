@@ -649,20 +649,23 @@ def validate_explore_category(category: Union[str, int, None]) -> Optional[int]:
 
 
 def parse_explore_csv(csv_path: str) -> Dict[str, Any]:
-    """Parse multi-section explore CSV into structured data.
+    """Parse Google Trends explore CSV into structured data.
 
-    The explore CSV contains multiple sections separated by blank lines:
-    - Interest over time (time series)
-    - Interest by region
-    - Related topics (TOP and RISING)
-    - Related queries (TOP and RISING)
+    The explore CSV format (multiTimeline.csv):
+    ```
+    Category: All categories
+
+    Week,bitcoin: (United States)
+    2025-01-12,59
+    2025-01-19,77
+    ...
+    ```
 
     Args:
         csv_path: Path to downloaded CSV
 
     Returns:
-        Dict with sections: interest_over_time, interest_by_region,
-        related_topics, related_queries
+        Dict with sections: interest_over_time, and potentially others
     """
     import pandas as pd
     import io
@@ -682,63 +685,57 @@ def parse_explore_csv(csv_path: str) -> Dict[str, Any]:
     # Split into sections by double newlines
     sections = content.split('\n\n')
 
-    current_section = None
     for section in sections:
         section = section.strip()
         if not section:
             continue
 
         lines = section.split('\n')
-        header = lines[0].lower() if lines else ''
+        if not lines:
+            continue
 
-        # Identify section type
-        if 'interest over time' in header or (len(lines) > 1 and ('week' in lines[1].lower() or 'day' in lines[1].lower() or 'month' in lines[1].lower())):
-            # Skip the header line if it's a label
-            data_start = 1 if 'interest' in header else 0
-            data = '\n'.join(lines[data_start:])
-            if data.strip():
+        first_line = lines[0].lower()
+
+        # Skip metadata lines like "Category: All categories"
+        if first_line.startswith('category:'):
+            continue
+
+        # Check if this looks like time series data (has Week, Day, Month, or Date column)
+        if len(lines) >= 2:
+            header_line = lines[0]
+            # Check for date-like column names
+            if any(date_word in header_line.lower() for date_word in ['week', 'day', 'month', 'date']):
                 try:
-                    df = pd.read_csv(io.StringIO(data))
-                    # Convert date column
-                    date_col = df.columns[0]
-                    df[date_col] = pd.to_datetime(df[date_col])
-                    df.set_index(date_col, inplace=True)
-                    result['interest_over_time'] = df
+                    df = pd.read_csv(io.StringIO(section))
+                    if len(df) > 0:
+                        # Convert first column to datetime (it's the date column)
+                        date_col = df.columns[0]
+                        df[date_col] = pd.to_datetime(df[date_col])
+                        df.set_index(date_col, inplace=True)
+
+                        # Clean up column names (remove country suffix like ": (United States)")
+                        df.columns = [col.split(':')[0].strip() for col in df.columns]
+
+                        result['interest_over_time'] = df
+                        print(f"[OK] Parsed interest_over_time: {len(df)} rows, columns: {list(df.columns)}")
                 except Exception as e:
-                    print(f"[WARN] Failed to parse interest_over_time: {e}")
+                    print(f"[WARN] Failed to parse time series data: {e}")
 
-        elif 'interest by' in header or 'region' in header.lower():
-            data_start = 1 if 'interest' in header or 'region' in header else 0
-            data = '\n'.join(lines[data_start:])
-            if data.strip():
-                try:
-                    result['interest_by_region'] = pd.read_csv(io.StringIO(data))
-                except Exception as e:
-                    print(f"[WARN] Failed to parse interest_by_region: {e}")
+        # Check for region data
+        elif 'region' in first_line or 'country' in first_line or 'subregion' in first_line:
+            try:
+                data = '\n'.join(lines[1:]) if 'region' in first_line else section
+                result['interest_by_region'] = pd.read_csv(io.StringIO(data))
+            except Exception as e:
+                print(f"[WARN] Failed to parse region data: {e}")
 
-        elif 'related topics' in header.lower():
-            current_section = 'topics'
+        # Check for related topics/queries sections
+        elif 'related' in first_line and 'topic' in first_line:
+            # This section may have TOP and RISING subsections
+            pass
 
-        elif 'related queries' in header.lower():
-            current_section = 'queries'
-
-        elif header.upper() == 'TOP' and current_section:
-            data = '\n'.join(lines[1:])
-            if data.strip():
-                try:
-                    key = f'related_{current_section}_top'
-                    result[key] = pd.read_csv(io.StringIO(data))
-                except Exception:
-                    pass
-
-        elif header.upper() == 'RISING' and current_section:
-            data = '\n'.join(lines[1:])
-            if data.strip():
-                try:
-                    key = f'related_{current_section}_rising'
-                    result[key] = pd.read_csv(io.StringIO(data))
-                except Exception:
-                    pass
+        elif 'related' in first_line and 'quer' in first_line:
+            pass
 
     return result
 
